@@ -13,8 +13,9 @@
 本项目核心设计理念是 **“解耦脚本与应用，统一接口与通信”**。通过本项目：
 - **PPT 技能 (`ppt-master`)**：从原路径 `C:\Users\Lenovo\.claude\skills\ppt-master\` 桥接，使得 AI 能够自动化执行源文档转换、大纲切分、SVG 页面设计、精致排版、动效注入、直到最终 PPTX 演示文稿一键导出的全套自动化 Pipeline。
 - **Nature 技能 (`nature-skills`)**：从原路径 `F:\fcpaper\nature-skills\` 桥接，提供学术期刊（CNS 级）并发多源检索、精确引用解析、EndNote/RIS 文献库导出，以及动态装载 Nature 级别的学术语气、段落大纲逻辑（Move Models）和经典 phrasebank 替换句式。
+- **PaperSpine 技能 (`PaperSpine`)**：从原路径 `F:\fcpaper\PaperSpine\` 桥接，提供学术论文全生命周期写作、大纲合理性诊断、LaTeX 格式和括号配对验证、中英文翻译质量审计（表格与内容密度验证）以及模拟学术同行双盲评审等多维度深度自检工具。
 
-这些独立脚本通过底层的 `stdio` 传输信道以标准 JSON 结构化交互，使 AI 拥有了高水准的 PPT 制作和 Nature 级别的科研写作学术辅助能力。
+这些独立脚本通过底层的 `stdio` 传输信道以标准 JSON 结构化交互，使 AI 拥有了高水准的 PPT 制作、Nature 级别的科研写作学术辅助以及严苛的学术文献质量把关能力。
 
 ---
 
@@ -32,12 +33,14 @@ graph TD
     subgraph External_Skills ["本地独立技能库 (Python)"]
         PPTMaster["C:\\Users\\Lenovo\\.claude\\skills\\ppt-master"]
         NatureSkills["F:\\fcpaper\\nature-skills"]
+        PaperSpine["F:\\fcpaper\\PaperSpine"]
     end
 
     Client -- "Stdio JSON-RPC" --> IndexJS
     
     IndexJS -- "Child Process (py)" --> PPTMaster
     IndexJS -- "Child Process (py)" --> NatureSkills
+    IndexJS -- "Child Process (py)" --> PaperSpine
     IndexJS -- "Local Import" --> HelperPY
     HelperPY -- "Module Call" --> NatureSkills
 ```

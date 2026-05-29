@@ -25,6 +25,7 @@ const server = new Server(
 // Constants
 const PPT_MASTER_PATH = 'C:\\Users\\Lenovo\\.claude\\skills\\ppt-master';
 const NATURE_SKILLS_PATH = 'F:\\fcpaper\\nature-skills';
+const PAPER_SPINE_PATH = 'F:\\fcpaper\\PaperSpine';
 const MY_UNIFIED_MCP_PATH = 'F:\\my-unified-mcp';
 
 /**
@@ -363,6 +364,54 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ['action']
         }
+      },
+      {
+        name: 'paperspine_analysis',
+        description: '学术论文全生命周期写作、诊断与 LaTeX 安全验证核心工具 (基于 PaperSpine)。包含论文写作风格统计分析、LaTeX 语法与结构验证、中英文翻译完整度检验、论文项目完整性诊断、段落字数控制等强大功能。',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              description: '执行的具体学术诊断或验证动作：\n' +
+                '- "style_metrics": 计算学术论文的写作风格指标 (包括字数、句长、高频学术词汇、起承转合连接词以及引用密度等)。\n' +
+                '- "latex_guard": 扫描 LaTeX 稿件 (验证括号是否匹配、合并冲突标记、文件与环境完整性、未定义引用与标签等)。\n' +
+                '- "translate_guard": 审核中英文对照翻译包的完整性 (检测文件遗漏、大表格结构破坏、内容字数密度不匹配及 manifest 偏差)。\n' +
+                '- "integrity_audit": 完整的 PaperSpine 写作质量大纲自检 (审核大纲 blueprint、写作 rationale matrix 完备度、引用储备库质量等)。\n' +
+                '- "word_guard": 段落与章节的字数硬性限制与多寡预警校验。\n' +
+                '- "citation_bank_check": 校验 citation support bank 引用储备库的结构与完备度。\n' +
+                '- "citation_quality_audit": 针对 citation support bank 引用储备库的年代、主题及引用质量进行精细化评估。\n' +
+                '- "artifact_check": 校验论文输出目录下的中间过程文件与最终成果是否均已妥善生成并对齐格式。\n' +
+                '- "revision_audit": 检查论文在评审后的修改过程是否与 rationale matrix 冲突。\n' +
+                '- "structured_review": 仿真学术同行评审，输出教导式的审稿意见并指出具体的修改操作建议。',
+              enum: [
+                'style_metrics', 'latex_guard', 'translate_guard', 'integrity_audit',
+                'word_guard', 'citation_bank_check', 'citation_quality_audit',
+                'artifact_check', 'revision_audit', 'structured_review'
+              ]
+            },
+            paths: {
+              type: 'array',
+              items: { type: 'string' },
+              description: '待分析的 LaTeX/Markdown 文本文件或目录路径列表 (用于 style_metrics, latex_guard)。'
+            },
+            outputDir: {
+              type: 'string',
+              description: 'PaperSpine 的项目输出目录路径 (如 F:\\fcpaper\\paper_rewriting_output，默认为当前目录或 "paper_rewriting_output")。'
+            },
+            json: {
+              type: 'boolean',
+              description: '是否直接返回精简的 JSON 结构化数据。若为 false 则返回经过格式化排版的 Markdown 报告。',
+              default: true
+            },
+            write: {
+              type: 'boolean',
+              description: '是否将生成的审计报告直接写入对应的项目输出目录下 (例如保存为 integrity_audit.md 或 translate_guard_report.md)。',
+              default: false
+            }
+          },
+          required: ['action']
+        }
       }
     ]
   };
@@ -660,6 +709,134 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         default:
           throw new Error(`Unsupported action: ${action}`);
       }
+    }
+    
+    // =======================================================================
+    // Tool 3: paperspine_analysis (PaperSpine)
+    // =======================================================================
+    if (name === 'paperspine_analysis') {
+      const action = toolArgs.action;
+      const scriptsDir = path.join(PAPER_SPINE_PATH, 'src', 'scripts');
+      const outputDir = toolArgs.outputDir || 'paper_rewriting_output';
+      
+      const pyArgs = [];
+      let scriptName = '';
+      let targetCwd = PAPER_SPINE_PATH;
+      
+      switch (action) {
+        case 'style_metrics': {
+          scriptName = 'style_metrics.py';
+          const paths = toolArgs.paths || ['.'];
+          pyArgs.push(...paths);
+          if (toolArgs.json !== false) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          break;
+        }
+        case 'latex_guard': {
+          scriptName = 'latex_guard.py';
+          const paths = toolArgs.paths || [];
+          if (paths.length === 0) {
+            throw new Error('latex_guard action requires at least one .tex file path in paths parameter');
+          }
+          pyArgs.push(paths[0]); // main tex file
+          if (paths.length > 1 && paths[1].endsWith('.bib')) {
+            pyArgs.push('--bib', paths[1]);
+          } else {
+            // Auto detect .bib file in the same directory as .tex file
+            const texDir = path.dirname(paths[0]);
+            if (fs.existsSync(texDir)) {
+              const files = fs.readdirSync(texDir);
+              const bibFile = files.find(f => f.endsWith('.bib'));
+              if (bibFile) {
+                pyArgs.push('--bib', path.join(texDir, bibFile));
+              }
+            }
+          }
+          if (toolArgs.json) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          break;
+        }
+        case 'translate_guard': {
+          scriptName = 'translate_guard.py';
+          pyArgs.push(outputDir);
+          if (toolArgs.json !== false) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          if (toolArgs.write) pyArgs.push('--write');
+          break;
+        }
+        case 'integrity_audit': {
+          scriptName = 'integrity_audit.py';
+          pyArgs.push(outputDir);
+          if (toolArgs.json !== false) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          if (toolArgs.write) pyArgs.push('--write');
+          break;
+        }
+        case 'word_guard': {
+          scriptName = 'word_guard.py';
+          const paths = toolArgs.paths || [];
+          let docxPath = '';
+          if (paths.length > 0) {
+            docxPath = paths[0];
+          } else {
+            // Auto detect docx in outputDir
+            if (fs.existsSync(outputDir)) {
+              const files = fs.readdirSync(outputDir);
+              const foundDocx = files.find(f => f.endsWith('.docx'));
+              if (foundDocx) {
+                docxPath = path.join(outputDir, foundDocx);
+              }
+            }
+          }
+          if (!docxPath) {
+            throw new Error('word_guard action requires a .docx file path, and none was found in outputDir');
+          }
+          pyArgs.push(docxPath);
+          if (toolArgs.json !== false) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          break;
+        }
+        case 'citation_bank_check': {
+          scriptName = 'citation_bank_check.py';
+          pyArgs.push('--dir', outputDir);
+          break;
+        }
+        case 'citation_quality_audit': {
+          scriptName = 'citation_quality_audit.py';
+          pyArgs.push('--dir', outputDir);
+          break;
+        }
+        case 'artifact_check': {
+          scriptName = 'artifact_check.py';
+          pyArgs.push('--dir', outputDir);
+          break;
+        }
+        case 'revision_audit': {
+          scriptName = 'revision_audit.py';
+          pyArgs.push('--dir', outputDir);
+          break;
+        }
+        case 'structured_review': {
+          scriptName = 'structured_review.py';
+          pyArgs.push(outputDir);
+          if (toolArgs.json !== false) pyArgs.push('--json');
+          else pyArgs.push('--markdown');
+          if (toolArgs.write) pyArgs.push('--write');
+          break;
+        }
+        default:
+          throw new Error(`Unsupported action: ${action}`);
+      }
+      
+      const scriptFullPath = path.join(scriptsDir, scriptName);
+      const res = await executePython(scriptFullPath, pyArgs, targetCwd);
+      
+      return {
+        content: [{
+          type: 'text',
+          text: res.success ? res.stdout : `PaperSpine execution failed:\n${res.stderr}`
+        }]
+      };
     }
     
     throw new Error(`Tool not found: ${name}`);
