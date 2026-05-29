@@ -1,0 +1,14 @@
+{
+  "name": "my-unified-mcp",
+  "version": "1.0.0",
+  "description": "Unified MCP Server wrapping ppt-master and nature-skills",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "js-yaml": "^4.1.1"
+  }
+}
